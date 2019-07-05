@@ -4,7 +4,6 @@ import com.lesfurets.jenkins.unit.MethodCall;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
@@ -20,34 +19,29 @@ public class JAT {
         return digest(new ArrayList<>(), 0, callStack);
     }
 
-    private static List<JATStep> digest(List<JATMetadata> jatMetadata, int index, List<MethodCall> callStack) {
+    private static List<JATStep> digest(List<MethodCall> metadata, int index, List<MethodCall> callStack) {
         if (index >= callStack.size()) {
-            return new ArrayList<>();
+            return new ArrayList<>(); // its over, its oooover ♫♫
         }
 
-        MethodCall methodCall = callStack.get(index);
+        // every time we add a method, we need to check if the depth is lower than the previous method
+        // if it is, we need to get rid of all metadata that was in the deeper levels of the stack
+        MethodCall currentMethod = callStack.get(index);
+        if (index > 0 && currentMethod.getStackDepth() < callStack.get(index - 1).getStackDepth()) {
+            metadata = metadata.stream().filter(m -> m.getStackDepth() < currentMethod.getStackDepth()).collect(toList());
+        }
 
-        if (isMetadata(methodCall)) {
+        if (isMetadata(currentMethod)) {
             // if method is metadata just add it to the metadata list and keep going
-            jatMetadata.add(JATMetadata.createFrom(methodCall));
-            return digest(jatMetadata, index + 1, callStack);
+            metadata.add(currentMethod);
+            return digest(metadata, index + 1, callStack);
 
         } else {
             // method is not metadata, so it is an executable step
-
-            // create a list with the current step
-            JATStep step = JATStep.createFrom(methodCall, jatMetadata);
+            final JATStep step = new JATStep(currentMethod, metadata);
             List<JATStep> jatSteps = new ArrayList<>() {{ add(step); }};
 
-
-            // if next method is not the end of call stack, remove metadata based on next call stack depth
-            List<JATMetadata> metadata = jatMetadata;
-            if (callStack.size() - 1 != index) {
-                MethodCall next = callStack.get(index + 1);
-                metadata = jatMetadata.stream().filter(m -> m.stackDepth() < next.getStackDepth()).collect(toList());
-            }
-
-            // remove metadata steps if call stack depth of next command is lower
+            // recursion continues...
             jatSteps.addAll(digest(metadata, index + 1, callStack));
             return jatSteps;
         }
